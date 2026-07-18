@@ -1,48 +1,52 @@
 # phantom-touch-bridge
 
-> Control cloud-connected adult toys via their own WebSocket relay — no Bluetooth, no proximity required.  
-> Works from anywhere with internet access. Designed for AI-assisted remote control.
+> 通过玩具自带的 WebSocket 中继控制云端远程玩具——不需要蓝牙，不需要近距离。  
+> 只要有网络，随时随地可控制。专为 AI 辅助远程控制设计。
 
 ---
 
-## How it works
+## 原理
 
-Most cloud-connected toys work through a **WebSocket relay server**:
+绝大多数云端玩具通过**WebSocket 中继服务器**工作：
 
 ```
-Your phone (toy owner)  ←──→  Brand's WS relay server  ←──→  Controller (you / your AI)
+手机（玩具持有方）←──→ 品牌 WS 中继服务器 ←──→ 控制端（你/你的AI）
 ```
 
-The share link your toy generates contains a session token. Anyone who "opens" that link connects to the relay as a controller. We skip the browser and connect directly via Python.
-
-## Supported devices
-
-| Device | Brand | Protocol | Motors |
-|--------|-------|----------|--------|
-| AKN_DS_SUCKEGG | Ankni / MonsterParty | MonsterParty WS | suction + vibration (dual) |
-| Single-motor Ankni devices | Ankni | MonsterParty WS | vibration |
-| Other brands | — | see `template.py` | varies |
+玩具生成的分享链接里含有 session token。任何"打开"这个链接的人都会以控制端身份接入中继。我们跳过浏览器，直接用 Python 连接。
 
 ---
 
-## Quick start (Ankni / MonsterParty)
+## 支持的设备
+
+| 设备 | 品牌 | 协议 | 马达 |
+|------|------|------|------|
+| AKN_DS_SUCKEGG | 安可尼 / MonsterParty | MonsterParty WS | 吸力 + 震动（双马达） |
+| 安可尼单马达设备 | 安可尼 | MonsterParty WS | 震动 |
+| 其他品牌 | — | 见 `template.py` | 因设备而异 |
+
+> 使用同一 MonsterParty 后端的品牌（同属醉清风健康科技）：**谜姬**、**安可尼**、**醉清风**——协议相同，op 码相同。
+
+---
+
+## 快速开始（安可尼 / MonsterParty）
 
 ```bash
 pip install websockets
 
-# Start daemon — token is from the share link path:
+# 启动 daemon — token 来自分享链接路径：
 # https://www.monsterparty.cn/remote/<TOKEN>
 python3 ankni_client.py <TOKEN>
 
-# In another terminal, send commands:
-echo "vib 70"           > /tmp/ankni_cmd   # vibrate at 70%
-echo "vib 60 3"         > /tmp/ankni_cmd   # 60% for 3 seconds then stop
-echo "vib 50 80"        > /tmp/ankni_cmd   # DS device: suction=50, vib=80
-echo "stop"             > /tmp/ankni_cmd   # stop all motors
-echo "quit"             > /tmp/ankni_cmd   # disconnect daemon
+# 另开一个终端发命令：
+echo "vib 70"        > /tmp/ankni_cmd   # 70% 强度持续震动
+echo "vib 60 3"      > /tmp/ankni_cmd   # 60% 持续 3 秒后自动停止
+echo "vib 50 80"     > /tmp/ankni_cmd   # 双马达设备：吸力=50，震动=80
+echo "stop"          > /tmp/ankni_cmd   # 停止所有马达
+echo "quit"          > /tmp/ankni_cmd   # 断开 daemon
 ```
 
-### Daemon state
+### 状态文件
 
 ```bash
 cat /tmp/ankni_state
@@ -51,106 +55,103 @@ cat /tmp/ankni_state
 
 ---
 
-## Protocol details (MonsterParty)
+## 协议细节（MonsterParty）
 
-### Session setup
+### 获取 session
 
 ```
 GET https://api.monsterparty.cc/main/v1/remote?s=<token>
 → { data: { socket_url, id (sess_id), user_id } }
 ```
 
-### WebSocket handshake
+### WebSocket 握手
 
 ```json
-// 1. Connect to socket_url with Origin: https://www.monsterparty.cn
-// 2. Send join message:
+// 1. 连接 socket_url，Origin: https://www.monsterparty.cn
+// 2. 发加入消息：
 { "op": 2, "id": 8899001, "gender": "male", "remoteID": <sess_id>,
   "senderID": <user_id>, "avatar": "", "nickname": "remote",
   "lat": 0, "lng": 0, "area": "" }
 
-// 3. Wait for op:6 (fd assignment):
+// 3. 等待 op:6（fd 分配）：
 { "op": 6, "sender": { "fd": 12296 }, "isSuck": false }
 
-// 4. Wait for op:15 (device ready — toy is connected):
+// 4. 等待 op:15（设备就绪——玩具已连线）：
 { "op": 15, "conn": true, "pid": "AKN_DS_SUCKEGG" }
 ```
 
-### Control command
+### 控制指令
 
 ```json
 { "op": 3, "vib": [70, 70, 70, 70, 70, 70, 70, 70, 70, 70],
   "fd": <sender_fd>, "keyType": "suck" }
 ```
 
-`vib` is always a 10-element integer array (0–100). `keyType` is `"suck"` for suction-type devices, `"vib"` otherwise.
+`vib` 始终是 10 位整数数组（0–100）。`keyType` 对吸力类设备为 `"suck"`，否则为 `"vib"`。
 
-### Heartbeat
+### 心跳
 
 ```json
-{ "op": 8 }   // send every ~9 seconds
+{ "op": 8 }   // 每 ~9 秒发一次
 ```
 
-⚠️ **Disable the websockets library's built-in ping** (`ping_interval=None, ping_timeout=None`) — otherwise it causes spurious disconnects. Use only the op:8 application heartbeat.
+⚠️ **必须禁用 websockets 库自带的 ping**（`ping_interval=None, ping_timeout=None`）——否则会导致莫名断连。只用 op:8 应用层心跳。
 
-### AKN_DS_SUCKEGG motor mapping
+### AKN_DS_SUCKEGG 双马达映射
 
-Discovered through empirical testing (position isolation):
+通过实测位置隔离发现：
 
-| vib array position | Motor |
-|--------------------|-------|
-| `[0]` | Suction pump |
-| `[1]`, `[2]`, `[3]`, `[4]` | Vibration motor |
-| `[5]`–`[9]` | Unused |
+| vib 数组位置 | 马达 |
+|-------------|------|
+| `[0]` | 吸力泵 |
+| `[1]`、`[2]`、`[3]`、`[4]` | 震动马达 |
+| `[5]`–`[9]` | 未使用 |
 
-To control both motors independently:
+独立控制两个马达：
 ```python
-vib = [suction, vibration, vibration, vibration, vibration, 0, 0, 0, 0, 0]
+vib = [吸力强度, 震动强度, 震动强度, 震动强度, 震动强度, 0, 0, 0, 0, 0]
 ```
 
 ---
 
-## Other brands
+## 其他品牌适配
 
-See `template.py` for a commented starting point. General steps:
+参见 `template.py`（有详细注释）和 `AI_GUIDE.md`（AI 执行步骤）。
 
-1. Open share link in browser DevTools → Network tab
-2. Find WebSocket connection and note the URL
-3. Observe the message sequence (join, fd, control)
-4. Download the main JS bundle and search for `"op"`, `"vib"`, `send(`
-5. Fill in `template.py` constants
-
-> Brands using the same MonsterParty backend (same parent company 醉清风健康科技):
-> **谜姬**, **安可尼**, **醉清风** — same protocol, same op codes.
+通用步骤：
+1. 用浏览器开发者工具打开分享链接，Network 标签抓接口
+2. 找到 WebSocket 连接和消息
+3. 下载主 JS 文件，搜索 `"op"`、`"vib"`、`send(`
+4. 填入 `template.py` 对应常量
 
 ---
 
-## AI integration
+## AI 集成
 
-The daemon uses file-based IPC (`/tmp/ankni_cmd`) so any process — including an AI agent — can send commands without managing WebSocket state:
+daemon 使用文件 IPC（`/tmp/ankni_cmd`），任何进程——包括 AI agent——都可以直接发命令，不需要管理 WebSocket 状态：
 
 ```python
-# From your AI tool implementation:
+# AI 工具实现示例：
 with open("/tmp/ankni_cmd", "w") as f:
     f.write(f"vib {intensity} {duration}")
 ```
 
-Example MCP tool wrapper: see [our blog post / Xiaohongshu post].
+详细的 AI 执行教程见 `AI_GUIDE.md`。
 
 ---
 
-## Known issues / gotchas
+## 常见坑
 
-| Issue | Cause | Fix |
-|-------|-------|-----|
-| Disconnect after ~2 min | websockets library keepalive ping timeout | `ping_interval=None, ping_timeout=None` |
-| `errNo: -1` | Token expired or already used | Get a fresh share link |
-| Only one motor responds | Wrong vib array format for DS device | Use DS motor mapping above |
-| Device doesn't respond at all | op:15 not received (device offline) | Ensure toy is powered on |
+| 问题 | 原因 | 解决方案 |
+|------|------|---------|
+| 约 2 分钟后断连 | websockets 库 keepalive ping 超时 | `ping_interval=None, ping_timeout=None` |
+| `errNo: -1` | token 已过期或已被使用 | 重新获取分享链接 |
+| 只有一侧马达响应 | 双马达设备 vib 数组格式不对 | 用上方 DS 映射格式 |
+| 设备完全没反应 | 未收到 op:15（设备离线） | 确认玩具已开机 |
 
 ---
 
-## Credits
+## 致谢
 
-Protocol reverse-engineered via browser DevTools + JS bundle analysis.  
-Motor mapping discovered through live empirical testing.
+协议通过浏览器 DevTools + JS 分析逆向工程获得。  
+双马达映射通过实测逐位排查发现。
