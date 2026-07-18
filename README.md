@@ -5,6 +5,22 @@
 
 ---
 
+## 前提条件
+
+**玩具端**
+- 你的玩具 APP 能生成**远程控制链接**（邀请好友控制）
+- 这个链接可以**直接在手机或电脑浏览器里打开**（不需要 APP，不需要扫码）
+- 不满足这个条件的玩具（纯蓝牙、必须开 APP 才能用的）目前不支持
+
+**运行环境**
+```bash
+# Python 3.10+
+pip install websockets       # 连接玩具 WebSocket 用
+pip install fastmcp          # 仅使用 mcp_toy_tools.py / mcp_template.py 时需要
+```
+
+---
+
 ## 原理
 
 绝大多数云端玩具通过**WebSocket 中继服务器**工作：
