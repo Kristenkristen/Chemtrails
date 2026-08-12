@@ -513,7 +513,7 @@ if ('wakeLock' in navigator) {
 
 ## 第六步：启动并测试
 
-### VPS 方案
+### 方案 A：VPS（AI 远程控制推荐）
 
 ```bash
 # 安装依赖
@@ -553,25 +553,56 @@ WantedBy=multi-user.target
 systemctl enable --now ble-relay
 ```
 
-### Termux 方案（纯手机，无需服务器）
+### 方案 B：Termux（纯手机，无需服务器）
+
+安装 [Termux](https://termux.dev/)（F-Droid 版，不是 Google Play 版）：
 
 ```bash
 # 在 Termux 里安装 Python
 pkg install python
 pip install websockets
 
-# 启动中继（监听 localhost:8769）
-python3 ble_relay.py
-
-# 同一台手机上，Chrome 访问桥接页面
-# 将 wsUrl 改为 ws://127.0.0.1:8769
-# BLE 连接 + 中继连接后即可本地控制
-
-# 如果需要 AI 远程控制，安装 ngrok 暴露端口：
-pkg install ngrok
-ngrok http 8769    # 或 ngrok tcp 8769
-# 复制 ngrok 给的公网地址，填入桥接页面的中继地址
+# 同时启动中继服务器和文件服务器
+python3 ble_relay.py &
+python3 -m http.server 8080 --directory /path/to/Chemtrails
 ```
+
+然后在手机 Chrome 里打开：
+```
+http://localhost:8080/toy_bridge.html
+```
+
+> ✅ `localhost` 对 Web Bluetooth API **豁免 HTTPS 限制**，直接可用。  
+> 将页面里的中继地址改为 `ws://localhost:8769`，全程不需要任何服务器。
+
+如果需要 AI / 外部远程控制，加一个 ngrok 暴露端口：
+
+```bash
+pkg install tsu   # 可选，用于获取更多权限
+# 下载 ngrok：https://ngrok.com/download（ARM 版）
+./ngrok tcp 8769   # 暴露 WebSocket 端口
+# ngrok 会给一个 tcp://xxx.ngrok.io:xxxxx 的地址
+# 将 toy_bridge.html 里的中继地址换成 wss://... 即可
+```
+
+### 方案 C：GitHub Pages（不想跑 Termux，只需托管网页）
+
+如果只需要托管桥接网页（中继服务器仍需 Termux 或 VPS）：
+
+1. 创建一个 GitHub 仓库，把 `toy_bridge.html` 上传
+2. 仓库设置 → Pages → 选择 `main` 分支
+3. 网页会自动发布到 `https://你的用户名.github.io/仓库名/toy_bridge.html`
+
+> GitHub Pages 自带 HTTPS，满足 Web Bluetooth 的安全上下文要求，完全免费。
+
+### 方案对比
+
+| | VPS | Termux 纯本地 | Termux + ngrok | GitHub Pages + Termux |
+|--|-----|--------------|---------------|----------------------|
+| 需要服务器 | ✓ VPS | ✗ | ✗ | ✗ |
+| AI 远程控制 | ✓ | ✗（本地限制） | ✓ | ✓（需 Termux 跑中继） |
+| 安装难度 | 中 | 低 | 低 | 低 |
+| 费用 | VPS 费用 | 免费 | 免费额度内 | 免费 |
 
 ### 测试流程
 
